@@ -1,0 +1,292 @@
+import warnings
+warnings.filterwarnings('ignore')
+import numpy as np
+import pandas as pd   
+import matplotlib.pyplot as plt
+import seaborn as sns
+import itertools
+
+from imblearn.over_sampling import SMOTE
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, confusion_matrix
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from xgboost import XGBClassifier
+from sklearn.ensemble import RandomForestClassifier
+
+# connect with google drive
+from google.colab import drive
+drive.mount('/content/drive', force_remount = True)
+
+application_details = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/application_record.csv')
+credit_record = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/credit_record.csv')
+
+application_details.head()
+
+
+credit_record.head()
+
+print(credit_record.shape)
+print("-----------------------")
+print(credit_record.nunique())
+print("-----------------------")
+print(application_details.shape)
+print("-----------------------")
+print(application_details.nunique())
+
+Data Cleaning
+
+def plot_confusion_matrix(cm, classes,
+                          normalize=False,
+                          title='Confusion matrix',
+                          cmap=plt.cm.Blues):
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        
+    print(cm)
+
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(title)
+    plt.colorbar()
+    tick_marks = np.arange(len(classes))
+    plt.xticks(tick_marks, classes)
+    plt.yticks(tick_marks, classes)
+
+    fmt = '.2f' if normalize else 'd'
+    thresh = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        plt.text(j, i, format(cm[i, j], fmt),
+                 horizontalalignment="center",
+                 color="white" if cm[i, j] > thresh else "black")
+
+    plt.tight_layout()
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
+
+def countplot_occupation(features):
+    for feature in features:
+        plt.figure(figsize=(30, 30))
+        ax=sns.countplot(y=application_details[feature], hue='NAME_EDUCATION_TYPE' , data=application_details)
+        plt.legend(loc='best')
+        total = len(application_details[feature])
+        for p in ax.patches:
+            percentage = '{:.1f}%'.format(100 * p.get_width()/total)
+            x = p.get_x() + p.get_width() + 0.02
+            y = p.get_y() + p.get_height()/2
+            ax.annotate(percentage, (x, y))
+    plt.show()
+
+def occupation_by_education_by_gender(occupations, educations, genders, length):
+    Gender = []
+    Education = []
+    Occupation = []
+    Percentage = []
+    for gender in genders:
+        for education in educations:
+            for occupation in occupations:
+                ender.append(gender)
+                Education.append(education)
+                Occupation.append(occupation)
+                temp_df_1=application_details.loc[application_details['OCCUPATION_TYPE'] == occupation]
+                temp_df_2=temp_df_1.loc[temp_df_1['CODE_GENDER'] == gender]
+                temp_df_3=temp_df_2.loc[temp_df_2['NAME_EDUCATION_TYPE'] == education]
+                length_filter = len(temp_df_3)
+                Percentage.append(length_filter/length)
+    percent_dict={
+        'Gender': Gender,
+        'Education': Education,
+        'Occupation': Occupation,
+        'Popularity Percentage': Percentage
+    }
+    df = pd.DataFrame(percent_dict)
+    df.to_excel('Occupation_popularity_index.xlsx', index=False)
+                
+
+occupation_by_education_by_gender(list(application_details['OCCUPATION_TYPE'].unique()), list(application_details['NAME_EDUCATION_TYPE'].unique()), list(application_details['CODE_GENDER'].unique()), len(application_details))
+
+occupation_popularity = pd.read_excel('Occupation_popularity_index.xlsx')
+
+occupation_popularity['Tag'] = occupation_popularity['Gender']+ '_' + occupation_popularity['Education']
+
+def Dict(data):
+    tag_list=list(data['Tag'].unique())
+    popular_occupation = []
+    data_grouped = data.groupby('Tag')
+    for tag in tag_list:
+        grouped_data = data_grouped.get_group(tag)
+        popular_occupation.append(grouped_data.loc[grouped_data['Popularity Percentage'] == max(list(grouped_data['Popularity Percentage']))]['Occupation'].tolist()[0])
+    Tag_dict={
+        'Tag': tag_list,
+        'Occupation': popular_occupation
+    }
+    return Tag_dict
+
+dict_df = Dict(occupation_popularity)
+pd.DataFrame(dict_df).to_excel('Tag_vs_Occupation.xlsx', index=False)
+tag_data = pd.read_excel('Tag_vs_Occupation.xlsx')
+
+tag_g = list(tag_data['Tag'])
+occu_g = list(tag_data['Occupation'])
+tag_dict = {}
+for index in range(len(tag_g)):
+    tag_dict[tag_g[index]] = occu_g[index]
+
+application_details['Tag'] = application_details['CODE_GENDER']+ '_' + application_details['NAME_EDUCATION_TYPE']
+def Replace_nan_occupation(df):
+    for key in tag_dict:
+        if df['Tag'] == key and pd.isnull(df['OCCUPATION_TYPE']):
+            df['OCCUPATION_TYPE'] = tag_dict[key]
+    return df
+len(application_details)
+
+application_details = application_details.apply(Replace_nan_occupation, axis=1)
+len(application_details)
+application_details.isnull().sum()
+
+gender=application_details['CODE_GENDER'].value_counts()
+
+plt.figure(figsize=(7, 6))
+ax = gender.plot(kind='bar', rot=0)
+ax.set_title("Bar Graph of Gender", y = 1)
+ax.set_xlabel('Gender')
+ax.set_ylabel('Number of People')
+ax.set_xticklabels(('Female', 'Male'))
+
+for rect in ax.patches:
+    y_value = rect.get_height()
+    x_value = rect.get_x() + rect.get_width() / 2
+    space = 1
+    label = format(y_value)
+    ax.annotate(label, (x_value, y_value), xytext=(0, space), textcoords="offset points", ha='center', va='bottom')    
+plt.show()
+
+application_details['AGE'] = np.ceil(pd.to_timedelta(application_details['DAYS_BIRTH'], unit='D').dt.days / -365.25)
+
+application_details['AGE'].plot(kind='hist',bins=20,density=True)
+
+application_details.drop('DAYS_BIRTH', axis=1, inplace=True)
+
+application_details.loc[(application_details['DAYS_EMPLOYED'] > 0), 'DAYS_EMPLOYED'] = 0
+application_details['YEARS_EMPLOYED'] = np.ceil(pd.to_timedelta(application_details['DAYS_EMPLOYED'], unit='D').dt.days / -365.25)
+
+application_details.drop(['DAYS_EMPLOYED', 'Tag'], axis=1, inplace=True)
+
+application_details['YEARS_EMPLOYED'].plot(kind='hist',bins=20,density=True)
+
+def Cat_to_Num(features):
+    for feature in features:
+        feature_list = list(np.unique(application_details[feature]))
+        feature_dict = {}
+        for i in range(len(feature_list)):
+                       feature_dict[feature_list[i]] = i
+        application_details.replace({feature : feature_dict}, inplace=True)
+        print(feature, '-->', feature_dict)
+categorical_features = ['CODE_GENDER', 'FLAG_OWN_CAR', 'FLAG_OWN_REALTY', 'NAME_INCOME_TYPE', 'NAME_FAMILY_STATUS', 'OCCUPATION_TYPE', 'NAME_HOUSING_TYPE', 'NAME_EDUCATION_TYPE']
+Cat_to_Num(categorical_features)
+
+convert_to = {'C' : 'Good_Debt', 'X' : 'Good_Debt', '0' : 'Good_Debt', '1' : 'Neutral_Debt', '2' : 'Neutral_Debt', '3' : 'Bad_Debt', '4' : 'Bad_Debt', '5' : 'Bad_Debt'}
+credit_record.replace({'STATUS' : convert_to}, inplace=True)
+
+credit_record = credit_record.value_counts(subset=['ID', 'STATUS']).unstack(fill_value=0)
+
+credit_record.loc[(credit_record['Good_Debt'] > credit_record['Neutral_Debt']), 'CREDIT_APPROVAL_STATUS'] = 1
+credit_record.loc[(credit_record['Good_Debt'] > credit_record['Bad_Debt']), 'CREDIT_APPROVAL_STATUS'] = 1
+credit_record.loc[(credit_record['Neutral_Debt'] > credit_record['Good_Debt']), 'CREDIT_APPROVAL_STATUS'] = 0
+credit_record.loc[(credit_record['Neutral_Debt'] > credit_record['Bad_Debt']), 'CREDIT_APPROVAL_STATUS'] = 1
+credit_record.loc[(credit_record['Bad_Debt'] > credit_record['Good_Debt']), 'CREDIT_APPROVAL_STATUS'] = 0
+credit_record.loc[(credit_record['Bad_Debt'] > credit_record['Neutral_Debt']), 'CREDIT_APPROVAL_STATUS'] = 0
+
+credit_record['CREDIT_APPROVAL_STATUS'] = credit_record['CREDIT_APPROVAL_STATUS'].astype('int')
+
+credit_record.drop(['Bad_Debt', 'Good_Debt', 'Neutral_Debt'], axis=1, inplace=True)
+
+Final_Credit_data = application_details.merge(credit_record, how='inner', on=['ID'])
+
+Final_Credit_data.shape
+
+credit_approval_data = Final_Credit_data.drop('ID', axis=1, inplace=False)
+
+Splitting data in to training and testing
+
+
+X_temp = credit_approval_data.drop('CREDIT_APPROVAL_STATUS', axis=1)
+Y_temp = credit_approval_data['CREDIT_APPROVAL_STATUS']
+
+# Using Synthetic Minority Over-Sampling Technique(SMOTE) to overcome sample imbalance problem. The number between 1 and 0 is balanced.
+X,Y = SMOTE().fit_resample(X_temp,Y_temp)
+X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.3, random_state=1024)
+
+**Algorithms**
+
+
+Logistic Regression
+
+#@title
+# log(p1−p)=β0+β1x1+⋅⋅⋅+βqxq
+
+model = LogisticRegression(C=0.8,
+                           random_state=0,
+                           solver='lbfgs')
+model.fit(X_train, y_train)
+y_predict = model.predict(X_test)
+
+print('Accuracy Score is {:.5}'.format(accuracy_score(y_test, y_predict) ))
+print(pd.DataFrame(confusion_matrix(y_test,y_predict)))
+
+sns.set_style('white') 
+class_names = ['0','1']
+plot_confusion_matrix(confusion_matrix(y_test,y_predict),
+                      classes= class_names, normalize = True, 
+                      title='Normalized Confusion Matrix: Logistic Regression')
+
+Decision Tree
+
+model = DecisionTreeClassifier(max_depth=12,
+                               min_samples_split=8,
+                               random_state=1024)
+model.fit(X_train, y_train)
+y_predict = model.predict(X_test)
+
+print('Accuracy Score is {:.5}'.format(accuracy_score(y_test, y_predict)))
+print(pd.DataFrame(confusion_matrix(y_test,y_predict)))
+
+plot_confusion_matrix(confusion_matrix(y_test,y_predict),
+                      classes=class_names, normalize = True, 
+                      title='Normalized Confusion Matrix: Decision Tree')
+
+Random Forest
+
+model = RandomForestClassifier(n_estimators=250,
+                              max_depth=12,
+                              min_samples_leaf=16
+                              )
+model.fit(X_train, y_train)
+y_predict = model.predict(X_test)
+
+print('Accuracy Score is {:.5}'.format(accuracy_score(y_test, y_predict)))
+print(pd.DataFrame(confusion_matrix(y_test,y_predict)))
+
+plot_confusion_matrix(confusion_matrix(y_test,y_predict),
+                      classes=class_names, normalize = True, 
+                      title='Normalized Confusion Matrix: Ramdom Forests')
+
+Xgboost
+
+#@title
+model = XGBClassifier(max_depth=12,
+                      n_estimators=250,
+                      min_child_weight=8, 
+                      subsample=0.8, 
+                      learning_rate =0.02,    
+                      seed=42)
+
+model.fit(X_train, y_train)
+y_predict = model.predict(X_test)
+print('Accuracy Score is {:.5}'.format(accuracy_score(y_test, y_predict)))
+print(pd.DataFrame(confusion_matrix(y_test,y_predict)))
+
+sns.set_style('white') 
+class_names = ['0','1']
+plot_confusion_matrix(confusion_matrix(y_test,y_predict),
+                      classes= class_names, normalize = True, 
+                      title='Normalized Confusion Matrix: Xgboost')
